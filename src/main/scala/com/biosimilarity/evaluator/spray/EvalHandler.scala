@@ -514,6 +514,7 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
     fromTermString("btc(walletData(W))").getOrElse( throw new Exception( "Couldn't parse btc( WalletRequest( W ) )." ))
   val btcWIFKeyLongTermStorage =
     fromTermString("btc(wifKey(W))").getOrElse( throw new Exception( "Couldn't parse btc( wifKey( W ) )." ))
+  val ampsWalletLabel = fromTermString("amps(walletRequest(W))").getOrElse( throw new Exception( "Couldn't parse btc(W)." ))  
 
   def confirmEmailToken(json: JValue, key: String): Unit = {
     val token = (json \ "content" \ "token").extract[String]
@@ -1092,6 +1093,29 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
     )
   }
 
+  def initializedWallet() : String = {
+    s"""{ "Balance": "0.0" }"""
+  }
+
+  def transferAMPs(json: JValue): Unit = {
+    val ( session, srcCnxn, trgtCnxn, amount ) =
+      (
+        new URI((json \ "content" \ "sessionURI").extract[String]),        
+        new PortableAgentCnxn(
+          new URI((json \ "content" \ "aConnection" \ "source").extract[String]),
+          (json \ "content" \ "aConnection" \ "label").extract[String],
+          new URI((json \ "content" \ "aConnection" \ "target").extract[String])
+        ),
+        new PortableAgentCnxn(
+          new URI((json \ "content" \ "bConnection" \ "source").extract[String]),
+          (json \ "content" \ "bConnection" \ "label").extract[String],
+          new URI((json \ "content" \ "bConnection" \ "target").extract[String])
+        ),
+        (json \ "content" \ "amount").extract[String]
+      )
+      // logic
+  }
+
   def onAgentCreation(
     cap: String,
     aliasCnxn: PortableAgentCnxn,
@@ -1160,6 +1184,24 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
                   }
                 }
               }
+            )
+          }
+        }
+      }
+    )
+
+    // AMPs wallet proxy
+    post(
+      ampsWalletLabel,
+      List( thisToNodeCnxn ),
+      Serializer.serialize( initializedWallet() ),
+      (optRsrc: Option[mTT.Resource]) => {
+        BasicLogService.tweet("createAMPsWallet | onPost : optRsrc = " + optRsrc)
+        optRsrc match {
+          case None => ()
+          case Some(_) => {
+            BasicLogService.tweet(
+              "createAMPsWallet | onPost | unexpected wallet data \n optRsrc = " + optRsrc
             )
           }
         }

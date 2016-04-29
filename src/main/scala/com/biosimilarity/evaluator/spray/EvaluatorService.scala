@@ -273,8 +273,10 @@ trait EvaluatorService extends HttpService with CORSSupport
     ("backupRequest", backupRequest),
     ("restoreRequest", restoreRequest),
     // Verifier protocol
-    ("initiateClaim", initiateClaim)
+    ("initiateClaim", initiateClaim),
     // BTC
+    // AMPs
+    ( "transferAMPs", transferAMPs )
   )
 
   @transient
