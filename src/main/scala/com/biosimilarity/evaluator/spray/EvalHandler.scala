@@ -1097,7 +1097,10 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
     s"""{ "Balance": "0.0" }"""
   }
 
-  def transferAMPs(json: JValue): Unit = {
+  def transferAMPs(
+    json: JValue
+  ): Unit = {
+    val onSuccess: Unit => Unit = Unit => ()
     val ( session, srcCnxn, trgtCnxn, amount ) =
       (
         new URI((json \ "content" \ "sessionURI").extract[String]),        
@@ -1111,9 +1114,175 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
           (json \ "content" \ "bConnection" \ "label").extract[String],
           new URI((json \ "content" \ "bConnection" \ "target").extract[String])
         ),
-        (json \ "content" \ "amount").extract[String]
+        (json \ "content" \ "amount").extract[String].toDouble
       )
-      // logic
+
+      def reportWaiting( srcCnxn : PortableAgentCnxn ) = {
+        println(
+          (
+            "*********************************************************************************"
+            + "\nwaiting for amps json data"
+            + "\nsrcCnxn: " + srcCnxn
+            + "\nampsWalletLabel: " + ampsWalletLabel
+            + "\n*********************************************************************************"
+          )
+        )
+        BasicLogService.tweet(
+          (
+            "*********************************************************************************"
+            + "\nwaiting for amps json data"
+            + "\nsrcCnxn: " + srcCnxn
+            + "\nampsWalletLabel: " + ampsWalletLabel
+            + "\n*********************************************************************************"
+          )
+        )          
+      }
+
+      def reportPayload(
+        srcCnxn : PortableAgentCnxn,
+        ampsWalletJsonStr : String
+      ) = {
+        println(
+          (
+            "*********************************************************************************"
+            + "\nreceived amps json data"
+            + "\nsrcCnxn: " + srcCnxn
+            + "\nampsWalletLabel: " + ampsWalletLabel
+            + "\nampsWalletJSONStr: " + ampsWalletJsonStr
+            + "\n*********************************************************************************"
+          )
+        )
+        BasicLogService.tweet(
+          (
+            "*********************************************************************************"
+            + "\nreceived amps json data"
+            + "\nampsCnxn: " + srcCnxn
+            + "\nampsWalletLabel: " + ampsWalletLabel
+            + "\nampsWalletJSONStr: " + ampsWalletJsonStr
+            + "\n*********************************************************************************"
+          )
+        )        
+      }
+
+      def reportUnexpectedMessaging(
+        v : Any,
+        srcCnxn : PortableAgentCnxn
+      ) = {
+        println(
+          (
+            "*********************************************************************************"
+            + "\nunexpected amps json data format" + v
+            + "\nsrcCnxn: " + srcCnxn
+            + "\nampsWalletLabel: " + ampsWalletLabel
+            + "\n*********************************************************************************"
+          )
+        )
+        BasicLogService.tweet(
+          (
+            "*********************************************************************************"
+            + "\nunexpected btc json data format" + v
+            + "\nsrcCnxn: " + srcCnxn
+            + "\nampsWalletLabel: " + ampsWalletLabel
+            + "\n*********************************************************************************"
+          )
+        )
+        throw new Exception( "unexpected btc json data format" + v )
+      }
+      
+      def handleRsp(
+        v : ConcreteHL.HLExpr,
+        wallets : ( Option[String], Option[String] )
+      ) : Unit = {
+        ( v, wallets ) match {
+          case ( Bottom, ( None, _ ) ) => reportWaiting( srcCnxn )
+          case ( Bottom, ( Some( _ ), _ ) ) => reportWaiting( trgtCnxn )
+          case ( PostedExpr( (PostedExpr( srcAMPsWalletJsonStr : String ), _, _, _ ) ), ( None, _ ) ) => {
+            reportPayload( srcCnxn, srcAMPsWalletJsonStr )
+            get(
+              ampsWalletLabel,
+              List( trgtCnxn ), 
+              (optRsrc: Option[mTT.Resource]) => {
+                optRsrc match {
+                  case None => ();
+                  case Some(mTT.Ground( w )) => {
+                    handleRsp( w, ( Some( srcAMPsWalletJsonStr ), None ) )
+                  }
+                  case Some(mTT.RBoundHM(Some(mTT.Ground( w )), _)) => {
+                    handleRsp( w, ( Some( srcAMPsWalletJsonStr ), None ) )
+                  }
+                  case _ => throw new Exception("Unexpected resource: " + optRsrc)
+                }
+              } )
+          }
+          case (
+            PostedExpr( (PostedExpr( trgtAMPsWalletJsonStr : String ), _, _, _ ) ),
+            ( Some( srcAMPsWalletJsonStr ), _ )
+          ) => {
+            reportPayload( trgtCnxn, trgtAMPsWalletJsonStr )
+            val ( srcBalance, trgtBalance ) =
+              (
+                ( parse( srcAMPsWalletJsonStr ) \ "Balance" ).extract[String].toDouble,
+                ( parse( trgtAMPsWalletJsonStr ) \ "Balance" ).extract[String].toDouble
+              );
+            if ( srcBalance >= amount ) {
+              val ( newSrcWallet, newTrgtWallet ) =
+                (
+                  s"""{ "Balance" : "${srcBalance - amount}" }""",
+                  s"""{ "Balance" : "${trgtBalance + amount}" }"""
+                )
+                put(
+                  ampsWalletLabel,
+                  List( srcCnxn ),
+                  newSrcWallet,
+                  (optRsrc: Option[mTT.Resource]) => {
+                    BasicLogService.tweet("update balance | onPut : optRsrc = " + optRsrc)
+                    optRsrc match {
+                      case None => ()
+                        case Some(_) => {
+                          onSuccess()
+                        }
+                    }
+                  }
+                );
+              put(
+                  ampsWalletLabel,
+                  List( srcCnxn ),
+                  newSrcWallet,
+                  (optRsrc: Option[mTT.Resource]) => {
+                    BasicLogService.tweet("update balance | onPut : optRsrc = " + optRsrc)
+                    optRsrc match {
+                      case None => ()
+                        case Some(_) => {
+                          onSuccess()
+                        }
+                    }
+                  }
+                )
+            }
+          }
+          case _ => {
+            reportUnexpectedMessaging( v, srcCnxn )
+          }
+        }
+      }
+    
+    def onWalletData(optRsrc: Option[mTT.Resource]) : Unit = {
+      optRsrc match {
+        case None => ();
+        case Some(mTT.Ground( v )) => {
+          handleRsp( v, ( None, None ) )
+        }
+        case Some(mTT.RBoundHM(Some(mTT.Ground( v )), _)) => {
+          handleRsp( v, ( None, None ) )
+        }
+        case _ => throw new Exception("Unexpected resource: " + optRsrc)
+      }
+    }    
+    // logic
+    get( ampsWalletLabel, List( srcCnxn ), onWalletData )
+  }
+
+  def queryBalance(json: JValue): Unit = {
   }
 
   def onAgentCreation(

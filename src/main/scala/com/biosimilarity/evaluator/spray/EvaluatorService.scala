@@ -276,7 +276,8 @@ trait EvaluatorService extends HttpService with CORSSupport
     ("initiateClaim", initiateClaim),
     // BTC
     // AMPs
-    ( "transferAMPs", transferAMPs )
+    ( "transferAMPs", transferAMPs ),
+    ( "queryBalance", queryBalance )
   )
 
   @transient
