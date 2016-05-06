@@ -1100,24 +1100,22 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
   def transferAMPs(
     json: JValue
   ): Unit = {
-    val onSuccess: Unit => Unit = Unit => ()
-    val ( session, srcCnxn, trgtCnxn, amount ) =
+    val onSuccess: Unit => Unit = Unit => ();
+    
+    val nodeAgentCap = emailToCap(NodeUser.email)
+    val nodeAliasURI = new URI("alias://" + nodeAgentCap + "/alias")
+    val nodeUserAliasCnxn = PortableAgentCnxn(nodeAliasURI, "alias", nodeAliasURI)
+
+    val ( session, srcURI, trgtURI, amount ) =
       (
-        new URI((json \ "content" \ "sessionURI").extract[String]),        
-        new PortableAgentCnxn(
-          new URI((json \ "content" \ "aConnection" \ "source").extract[String]),
-          (json \ "content" \ "aConnection" \ "label").extract[String],
-          new URI((json \ "content" \ "aConnection" \ "target").extract[String])
-        ),
-        new PortableAgentCnxn(
-          new URI((json \ "content" \ "bConnection" \ "source").extract[String]),
-          (json \ "content" \ "bConnection" \ "label").extract[String],
-          new URI((json \ "content" \ "bConnection" \ "target").extract[String])
-        ),
+        new URI((json \ "content" \ "sessionURI").extract[String]),
+        new URI((json \ "content" \ "source").extract[String]),
+        new URI((json \ "content" \ "target").extract[String]),
         (json \ "content" \ "amount").extract[String].toDouble
       )
+    //val nodeToThisCnxn = PortableAgentCnxn(nodeAliasURI, cnxnLabel, aliasURI)
 
-      def reportWaiting( srcCnxn : PortableAgentCnxn ) = {
+    def reportWaiting( srcCnxn : PortableAgentCnxn ) = {
         println(
           (
             "*********************************************************************************"
@@ -1188,98 +1186,151 @@ trait EvalHandler extends CapUtilities with BTCCryptoUtilities {
         )
         throw new Exception( "unexpected btc json data format" + v )
       }
-      
-      def handleRsp(
-        v : ConcreteHL.HLExpr,
-        wallets : ( Option[String], Option[String] )
-      ) : Unit = {
-        ( v, wallets ) match {
-          case ( Bottom, ( None, _ ) ) => reportWaiting( srcCnxn )
-          case ( Bottom, ( Some( _ ), _ ) ) => reportWaiting( trgtCnxn )
-          case ( PostedExpr( (PostedExpr( srcAMPsWalletJsonStr : String ), _, _, _ ) ), ( None, _ ) ) => {
-            reportPayload( srcCnxn, srcAMPsWalletJsonStr )
-            get(
-              ampsWalletLabel,
-              List( trgtCnxn ), 
-              (optRsrc: Option[mTT.Resource]) => {
+
+    def loop( bicnxns : Seq[PortableAgentBiCnxn], uri : URI ) : Option[PortableAgentCnxn] = {
+      bicnxns match {
+        case PortableAgentBiCnxn( sc@PortableAgentCnxn( src, lbl, trgt ), _ ) :: rBiCnxns => {
+          if ( src.equals( uri ) ) {
+            Some( sc )
+          }
+          else {
+            loop( rBiCnxns, uri )
+          }
+        }
+        case Nil => None
+      }
+    }
+
+    read(
+      biCnxnsListLabel,
+      List(nodeUserAliasCnxn),
+      (optRsrc: Option[mTT.Resource]) => {
+        BasicLogService.tweet("connectToNodeUser | onGet : optRsrc = " + optRsrc)
+        def handleRsp( v : ConcreteHL.HLExpr ) : Unit = {          
+          val newBiCnxnList = v match {
+            case PostedExpr( (PostedExpr(biCnxnListStr: String), _, _, _) ) => {
+              val bicnxns = Serializer.deserialize[List[PortableAgentBiCnxn]](biCnxnListStr)
+              val optSrcCnxn : Option[PortableAgentCnxn] = loop( bicnxns, srcURI )
+              val optTrgtCnxn : Option[PortableAgentCnxn] = loop( bicnxns, trgtURI )
+              val ( srcCnxn : PortableAgentCnxn, trgtCnxn : PortableAgentCnxn ) =
+                ( optSrcCnxn, optTrgtCnxn ) match {
+                  case ( Some( sc ), Some( tc ) ) => { ( sc, tc ) }
+                  case _ => throw new Exception( "missing endpoint: " + optSrcCnxn + "," + optTrgtCnxn )
+                }
+
+              def innerHandleRsp(
+                v : ConcreteHL.HLExpr,
+                wallets : ( Option[String], Option[String] )
+              ) : Unit = {
+                ( v, wallets ) match {
+                  case ( Bottom, ( None, _ ) ) => reportWaiting( srcCnxn )
+                  case ( Bottom, ( Some( _ ), _ ) ) => reportWaiting( trgtCnxn )
+                  case ( PostedExpr( (PostedExpr( srcAMPsWalletJsonStr : String ), _, _, _ ) ), ( None, _ ) ) => {
+                    reportPayload( srcCnxn, srcAMPsWalletJsonStr )
+                    get(
+                      ampsWalletLabel,
+                      List( trgtCnxn ), 
+                      (optRsrc: Option[mTT.Resource]) => {
+                        optRsrc match {
+                          case None => ();
+                          case Some(mTT.Ground( w )) => {
+                            innerHandleRsp( w, ( Some( srcAMPsWalletJsonStr ), None ) )
+                          }
+                          case Some(mTT.RBoundHM(Some(mTT.Ground( w )), _)) => {
+                            innerHandleRsp( w, ( Some( srcAMPsWalletJsonStr ), None ) )
+                          }
+                          case _ => throw new Exception("Unexpected resource: " + optRsrc)
+                        }
+                      } )
+                  }
+                  case (
+                    PostedExpr( (PostedExpr( trgtAMPsWalletJsonStr : String ), _, _, _ ) ),
+                    ( Some( srcAMPsWalletJsonStr ), _ )
+                  ) => {
+                    reportPayload( trgtCnxn, trgtAMPsWalletJsonStr )
+                    val ( srcBalance, trgtBalance ) =
+                      (
+                        ( parse( srcAMPsWalletJsonStr ) \ "Balance" ).extract[String].toDouble,
+                        ( parse( trgtAMPsWalletJsonStr ) \ "Balance" ).extract[String].toDouble
+                      );
+                    if ( srcBalance >= amount ) {
+                      val ( newSrcWallet, newTrgtWallet ) =
+                        (
+                          s"""{ "Balance" : "${srcBalance - amount}" }""",
+                          s"""{ "Balance" : "${trgtBalance + amount}" }"""
+                        )
+                        put(
+                          ampsWalletLabel,
+                          List( srcCnxn ),
+                          newSrcWallet,
+                          (optRsrc: Option[mTT.Resource]) => {
+                            BasicLogService.tweet("update balance | onPut : optRsrc = " + optRsrc)
+                            optRsrc match {
+                              case None => ()
+                                case Some(_) => {
+                                  onSuccess()
+                                }
+                            }
+                          }
+                        );
+                      put(
+                        ampsWalletLabel,
+                        List( srcCnxn ),
+                        newSrcWallet,
+                        (optRsrc: Option[mTT.Resource]) => {
+                          BasicLogService.tweet("update balance | onPut : optRsrc = " + optRsrc)
+                          optRsrc match {
+                            case None => ()
+                              case Some(_) => {
+                                onSuccess()
+                              }
+                          }
+                        }
+                      )
+                    }
+                  }
+                  case _ => {
+                    reportUnexpectedMessaging( v, srcCnxn )
+                  }
+                }
+              }
+              
+              def onWalletData(optRsrc: Option[mTT.Resource]) : Unit = {
                 optRsrc match {
                   case None => ();
-                  case Some(mTT.Ground( w )) => {
-                    handleRsp( w, ( Some( srcAMPsWalletJsonStr ), None ) )
+                  case Some(mTT.Ground( v )) => {
+                    innerHandleRsp( v, ( None, None ) )
                   }
-                  case Some(mTT.RBoundHM(Some(mTT.Ground( w )), _)) => {
-                    handleRsp( w, ( Some( srcAMPsWalletJsonStr ), None ) )
+                  case Some(mTT.RBoundHM(Some(mTT.Ground( v )), _)) => {
+                    innerHandleRsp( v, ( None, None ) )
                   }
                   case _ => throw new Exception("Unexpected resource: " + optRsrc)
                 }
-              } )
-          }
-          case (
-            PostedExpr( (PostedExpr( trgtAMPsWalletJsonStr : String ), _, _, _ ) ),
-            ( Some( srcAMPsWalletJsonStr ), _ )
-          ) => {
-            reportPayload( trgtCnxn, trgtAMPsWalletJsonStr )
-            val ( srcBalance, trgtBalance ) =
-              (
-                ( parse( srcAMPsWalletJsonStr ) \ "Balance" ).extract[String].toDouble,
-                ( parse( trgtAMPsWalletJsonStr ) \ "Balance" ).extract[String].toDouble
-              );
-            if ( srcBalance >= amount ) {
-              val ( newSrcWallet, newTrgtWallet ) =
-                (
-                  s"""{ "Balance" : "${srcBalance - amount}" }""",
-                  s"""{ "Balance" : "${trgtBalance + amount}" }"""
-                )
-                put(
-                  ampsWalletLabel,
-                  List( srcCnxn ),
-                  newSrcWallet,
-                  (optRsrc: Option[mTT.Resource]) => {
-                    BasicLogService.tweet("update balance | onPut : optRsrc = " + optRsrc)
-                    optRsrc match {
-                      case None => ()
-                        case Some(_) => {
-                          onSuccess()
-                        }
-                    }
-                  }
-                );
-              put(
-                  ampsWalletLabel,
-                  List( srcCnxn ),
-                  newSrcWallet,
-                  (optRsrc: Option[mTT.Resource]) => {
-                    BasicLogService.tweet("update balance | onPut : optRsrc = " + optRsrc)
-                    optRsrc match {
-                      case None => ()
-                        case Some(_) => {
-                          onSuccess()
-                        }
-                    }
-                  }
-                )
+              }
+              
+              get( ampsWalletLabel, List( srcCnxn ), onWalletData )
             }
+            case Bottom => {
+              throw new Exception("Unrecognized resource: v = " + v)
+            }
+          }          
+        }
+        optRsrc match {
+          case None => ();
+          case Some( mTT.Ground(v)) => {
+            handleRsp( v )
+          }
+          case Some(mTT.RBoundHM(Some( mTT.Ground(v)), _)) => {
+            handleRsp( v )
           }
           case _ => {
-            reportUnexpectedMessaging( v, srcCnxn )
+            throw new Exception("Unrecognized resource: optRsrc = " + optRsrc)
           }
         }
       }
-    
-    def onWalletData(optRsrc: Option[mTT.Resource]) : Unit = {
-      optRsrc match {
-        case None => ();
-        case Some(mTT.Ground( v )) => {
-          handleRsp( v, ( None, None ) )
-        }
-        case Some(mTT.RBoundHM(Some(mTT.Ground( v )), _)) => {
-          handleRsp( v, ( None, None ) )
-        }
-        case _ => throw new Exception("Unexpected resource: " + optRsrc)
-      }
-    }    
+    )                  
     // logic
-    get( ampsWalletLabel, List( srcCnxn ), onWalletData )
+    
   }
 
   def queryBalance(json: JValue): Unit = {
