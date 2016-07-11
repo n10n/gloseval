@@ -41,7 +41,7 @@ jdk:
     - wget https://github.com/n10n/DockerNode/raw/master/m2scalaz210700.tar.gz -O $HOME/m2scalaz210700.tar.gz
     - tar -xzvf m2scalaz210700.tar.gz -C $HOME; rm -f $HOME/m2scalaz210700.tar.gz
 #    - wget https://github.com/synereo/compilednode/raw/master/lib/specialK-1.1.8.5.jar -O $HOME/.m2/repository/com/biosimilarity/lift/specialK/1.1.8.5/specialK-1.1.8.5.jar
-    - wget https://github.com/synereo/compilednode/raw/master/lib/pom-specialk.xml -O $HOME/.m2/repository/com/biosimilarity/lift/specialK/1.1.8.5/specialK-1.1.8.5.pom
+#    - wget https://github.com/synereo/compilednode/raw/master/lib/pom-specialk.xml -O $HOME/.m2/repository/com/biosimilarity/lift/specialK/1.1.8.5/specialK-1.1.8.5.pom
     - wget https://github.com/synereo/compilednode/raw/master/lib/agentservices-store-ia-1.9.5.jar -O $HOME/.m2/repository/com/protegra-ati/agentservices-store-ia/1.9.5/agentservices-store-ia-1.9.5.jar
     - wget https://github.com/synereo/compilednode/raw/master/lib/pom-agentservicestore.xml -O $HOME/.m2/repository/com/protegra-ati/agentservices-store-ia/1.9.5/agentservices-store-ia-1.9.5.pom
   
