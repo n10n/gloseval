@@ -1,9 +1,9 @@
   sudo: false
 
-  language: scala
+  language: java
 
-  scala:
-   - 2.10.5
+#  scala:
+#   - 2.10.5
 
 cache:
   directories:
@@ -17,15 +17,15 @@ jdk:
 
 
 # blocklist
-branches:
-  except:
+  branches:
+    except:
 
 # safelist
-branches:
-  only:
+  branches:
+    only:
     - 1.0
-    
-script:
+
+  before_script:
     - wget https://github.com/n10n/DockerNode/raw/master/m2cup-jlex-configgy-prolog-pickling.tar.gz -O $HOME/m2cup-jlex-configgy-prolog-pickling.tar.gz
     - tar -xzvf m2cup-jlex-configgy-prolog-pickling.tar.gz -C $HOME; rm -f $HOME/m2cup-jlex-configgy-prolog-pickling.tar.gz
     - wget https://github.com/n10n/DockerNode/raw/master/m2scalaz210700.tar.gz -O $HOME/m2scalaz210700.tar.gz
@@ -34,7 +34,11 @@ script:
     - wget https://github.com/synereo/compilednode/raw/master/lib/pom-specialk.xml -O $HOME/.m2/repository/com/biosimilarity/lift/specialK/1.1.8.5/specialK-1.1.8.5.pom
     - wget https://github.com/synereo/compilednode/raw/master/lib/agentservices-store-ia-1.9.5.jar -O $HOME/.m2/repository/com/protegra-ati/agentservices-store-ia/1.9.5/agentservices-store-ia-1.9.5.jar
     - wget https://github.com/synereo/compilednode/raw/master/lib/pom-agentservicestore.xml -O $HOME/.m2/repository/com/protegra-ati/agentservices-store-ia/1.9.5/agentservices-store-ia-1.9.5.pom
+  
+    
+  script:
     - mvn -e -fn -DskipTests=true install prepare-package
-notifications:
-  email:
-    - ns68751+tci@gmail.com
+
+  notifications:
+    email:
+      - ns68751+tci@gmail.com
