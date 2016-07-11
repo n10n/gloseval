@@ -2,6 +2,7 @@
 
   language: java
 
+# To compile with Maven using java as language
 #  scala:
 #   - 2.10.5
 
