@@ -16,7 +16,6 @@ jdk:
   - oraclejdk7
 #  - openjdk8
 
-
 # blocklist
   branches:
     except:
