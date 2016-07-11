@@ -31,6 +31,14 @@
 
     <repositories>
         <repository>
+            <snapshots>
+                <enabled>false</enabled>
+        </snapshots>
+        <id>bintray-synereo-maven</id>
+        <name>bintray</name>
+        <url>http://dl.bintray.com/synereo/maven</url>
+        </repository>
+        <repository>
             <id>biosim</id>
             <url>http://biosimrepomirror.googlecode.com/svn/trunk</url>
             <snapshots>
