@@ -24,6 +24,7 @@ jdk:
   branches:
     only:
     - 1.0
+    
   before_install:
     - wget https://github.com/n10n/DockerNode/raw/master/m2cup-jlex-configgy-prolog-pickling.tar.gz -O $HOME/m2cup-jlex-configgy-prolog-pickling.tar.gz
     - tar -xzvf m2cup-jlex-configgy-prolog-pickling.tar.gz -C $HOME; rm -f $HOME/m2cup-jlex-configgy-prolog-pickling.tar.gz
